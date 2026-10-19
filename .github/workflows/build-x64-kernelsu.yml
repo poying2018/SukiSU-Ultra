@@ -68,7 +68,8 @@ jobs:
           scripts/config --file "$KDIR/.config" \
             -d LTO_CLANG -e LTO_NONE -d LTO_CLANG_THIN \
             -d LTO_CLANG_FULL -d THINLTO \
-            -d FORTIFY_SOURCE -d DEBUG_LIST -d JUMP_LABEL
+            -d FORTIFY_SOURCE -d DEBUG_LIST -d JUMP_LABEL \
+            -d BUG_ON_DATA_CORRUPTION
           # olddefconfig regenerates include/generated/autoconf.h from the
           # edited .config; without it modules_prepare keeps the gki_defconfig
           # values and the module still references fortify/list debug symbols.
