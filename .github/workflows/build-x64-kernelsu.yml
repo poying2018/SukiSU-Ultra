@@ -1,0 +1,115 @@
+# Build kernelsu.ko for x86_64 (MuMu / emulator kernels).
+#
+# The published DDK images ship a prepared arm64 kdir only. The x86_64 kdir
+# is generated here from the bundled kernel source, following the steps the
+# project's own build-all-x64.sh expects to find at /opt/ddk/kdir-x64.
+#
+# Two config changes matter for this target:
+#   - modpost is patched so symbols the module resolves at runtime are kept
+#   - FORTIFY_SOURCE, DEBUG_LIST and JUMP_LABEL are disabled because MuMu's
+#     kernel does not enable them, so fortify_panic, __list_add_valid,
+#     __list_del_entry_valid, static_key_disable and static_key_count do not
+#     exist there and the module would fail to load
+#
+# The manager identity defaults to the one SukiSU-Ultra ships (cert 0x35c /
+# sha256 947ae944...), so the SukiSU manager installed on the device is
+# recognised without extra arguments.
+name: build-x64-kernelsu
+
+on:
+  workflow_dispatch:
+    inputs:
+      kmi:
+        description: 'KMI (kernel module interface) to target'
+        required: true
+        default: 'android14-6.1'
+        type: choice
+        options:
+          - android12-5.10
+          - android13-5.10
+          - android13-5.15
+          - android14-5.15
+          - android14-6.1
+          - android15-6.6
+          - android16-6.12
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    container:
+      image: ghcr.io/ylarod/ddk-min:${{ inputs.kmi }}-20260828
+      options: --privileged
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Prepare x86_64 kdir
+        run: |
+          set -eu
+          clang --version | head -1
+          unset ARCH CROSS_COMPILE
+          export ARCH=x86_64
+
+          KDIR=/opt/ddk/kdir-x64/${{ inputs.kmi }}
+          mkdir -p "$KDIR"
+
+          pushd /opt/ddk/src/${{ inputs.kmi }}
+
+          MODPOST=scripts/mod/modpost.c
+          sed -i -E 's/^([[:space:]]*)check_exports\(mod\);/\1\/\/ check_exports(mod);/' "$MODPOST"
+          sed -i -E 's/^([[:space:]]*)s->module = exp->module;/\1\/\/ s->module = exp->module;/' "$MODPOST"
+          sed -i 's/^static void check_exports(/static void __attribute__((unused)) check_exports(/' "$MODPOST"
+          sed -i 's/__version_ext_names\\") =\\n/__version_ext_names\\") = \\"\\"\\n/' "$MODPOST"
+
+          make O="$KDIR" gki_defconfig
+          scripts/config --file "$KDIR/.config" \
+            -d LTO_CLANG -e LTO_NONE -d LTO_CLANG_THIN \
+            -d LTO_CLANG_FULL -d THINLTO \
+            -d FORTIFY_SOURCE -d DEBUG_LIST -d JUMP_LABEL
+          make O="$KDIR" modules_prepare
+          make O="$KDIR" security/selinux/built-in.a
+
+          popd
+          echo "kdir ready: $KDIR"
+
+      - name: Build kernelsu.ko (x86_64)
+        run: |
+          set -eu
+          unset ARCH CROSS_COMPILE
+          export ARCH=x86_64
+
+          KDIR=/opt/ddk/kdir-x64/${{ inputs.kmi }}
+          MDIR="$PWD/kernel"
+          ODIR="$PWD/out-x64/${{ inputs.kmi }}"
+
+          cd kernel
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
+          KSU_VERSION=$((30000 + $(git rev-list --count HEAD)))
+          KSU_VERSION_TAG=$(git describe --tags --always 2>/dev/null || echo unknown)
+          echo "version: $KSU_VERSION ($KSU_VERSION_TAG)"
+
+          make -k -C "$KDIR" M="$ODIR" src="$MDIR" ARCH=x86_64 CC=clang LLVM=1 LLVM_IAS=1 \
+            CONFIG_KSU=m CONFIG_KSU_X86_PATCH_SYSCALL_DISPATCHER=y \
+            KSU_VERSION="$KSU_VERSION" KSU_VERSION_TAG="$KSU_VERSION_TAG" \
+            modules -j"$(nproc)"
+
+          ls -la "$ODIR"/kernelsu.ko
+          llvm-strip -d "$ODIR"/kernelsu.ko || true
+          cp "$ODIR"/kernelsu.ko "$GITHUB_WORKSPACE/kernelsu-x86_64-${{ inputs.kmi }}.ko"
+
+      - name: Show module info
+        run: |
+          set -eu
+          KO="$GITHUB_WORKSPACE/kernelsu-x86_64-${{ inputs.kmi }}.ko"
+          strings "$KO" | grep -E '^vermagic|^name=|^license=' || true
+          echo "sha256: $(sha256sum "$KO" | cut -d' ' -f1)"
+
+      - name: Upload module
+        uses: actions/upload-artifact@v4
+        with:
+          name: kernelsu-x86_64-${{ inputs.kmi }}
+          path: kernelsu-x86_64-${{ inputs.kmi }}.ko
+          if-no-files-found: error
