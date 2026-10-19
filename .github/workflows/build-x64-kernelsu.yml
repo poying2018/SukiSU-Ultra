@@ -69,6 +69,11 @@ jobs:
             -d LTO_CLANG -e LTO_NONE -d LTO_CLANG_THIN \
             -d LTO_CLANG_FULL -d THINLTO \
             -d FORTIFY_SOURCE -d DEBUG_LIST -d JUMP_LABEL
+          # olddefconfig regenerates include/generated/autoconf.h from the
+          # edited .config; without it modules_prepare keeps the gki_defconfig
+          # values and the module still references fortify/list debug symbols.
+          make O="$KDIR" olddefconfig
+          grep -E "CONFIG_(DEBUG_LIST|FORTIFY_SOURCE|JUMP_LABEL)" "$KDIR/.config" || true
           make O="$KDIR" modules_prepare
           make O="$KDIR" security/selinux/built-in.a
 
