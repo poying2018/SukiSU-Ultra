@@ -97,22 +97,26 @@ bool ksu_late_loaded;
  * kernel that does export the real ones is unaffected because nothing calls
  * these on a healthy path.
  */
+void fortify_panic(const char *name) __noreturn __cold;
 void fortify_panic(const char *name)
 {
 	(void)name;
+	BUG();
 }
 
-void __list_add_valid(struct list_head *new, struct list_head *prev,
+bool __list_add_valid(struct list_head *new, struct list_head *prev,
 		      struct list_head *next)
 {
 	(void)new;
 	(void)prev;
 	(void)next;
+	return true;
 }
 
-void __list_del_entry_valid(struct list_head *entry)
+bool __list_del_entry_valid(struct list_head *entry)
 {
 	(void)entry;
+	return true;
 }
 
 int static_key_count(struct static_key *key)
