@@ -4,12 +4,16 @@
 # is generated here from the bundled kernel source, following the steps the
 # project's own build-all-x64.sh expects to find at /opt/ddk/kdir-x64.
 #
-# Two config changes matter for this target:
-#   - modpost is patched so symbols the module resolves at runtime are kept
-#   - FORTIFY_SOURCE, DEBUG_LIST and JUMP_LABEL are disabled because MuMu's
-#     kernel does not enable them, so fortify_panic, __list_add_valid,
-#     __list_del_entry_valid, static_key_disable and static_key_count do not
-#     exist there and the module would fail to load
+# modpost is patched so symbols the module resolves at runtime are kept.
+#
+# FORTIFY_SOURCE / DEBUG_LIST / JUMP_LABEL stay at their gki_defconfig values.
+# Disabling them produces a module whose relocations the x86 module loader
+# rejects outright ("Skipping invalid relocation target"), while keeping them
+# only leaves a few undefined symbols, which the late-load loader resolves
+# against kallsyms.
+#
+# The module is deliberately NOT stripped: the late-load loader reads .symtab to
+# learn which symbols to resolve, and refuses a stripped module.
 #
 # The manager identity defaults to the one SukiSU-Ultra ships (cert 0x35c /
 # sha256 947ae944...), so the SukiSU manager installed on the device is
@@ -65,16 +69,14 @@ jobs:
           sed -i 's/__version_ext_names\\") =\\n/__version_ext_names\\") = \\"\\"\\n/' "$MODPOST"
 
           make O="$KDIR" gki_defconfig
+          # FORTIFY_SOURCE / DEBUG_LIST / JUMP_LABEL stay at their gki_defconfig
+          # values. Disabling them yields a module whose relocations the x86
+          # loader rejects outright ("Skipping invalid relocation target"),
+          # whereas keeping them only leaves a few undefined symbols that the
+          # late-load loader resolves against kallsyms.
           scripts/config --file "$KDIR/.config" \
-            -d LTO_CLANG -e LTO_NONE -d LTO_CLANG_THIN \
-            -d LTO_CLANG_FULL -d THINLTO \
-            -d FORTIFY_SOURCE -d DEBUG_LIST -d JUMP_LABEL \
-            -d BUG_ON_DATA_CORRUPTION
-          # olddefconfig regenerates include/generated/autoconf.h from the
-          # edited .config; without it modules_prepare keeps the gki_defconfig
-          # values and the module still references fortify/list debug symbols.
+            -d LTO_CLANG -e LTO_NONE -d LTO_CLANG_THIN -d LTO_CLANG_FULL -d THINLTO
           make O="$KDIR" olddefconfig
-          grep -E "CONFIG_(DEBUG_LIST|FORTIFY_SOURCE|JUMP_LABEL)" "$KDIR/.config" || true
           make O="$KDIR" modules_prepare
           make O="$KDIR" security/selinux/built-in.a
 
