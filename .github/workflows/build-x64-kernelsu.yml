@@ -103,7 +103,8 @@ jobs:
             modules -j"$(nproc)"
 
           ls -la "$ODIR"/kernelsu.ko
-          llvm-strip -d "$ODIR"/kernelsu.ko || true
+          # keep .symtab: the late-load loader resolves undefined symbols
+          # against it, so stripping here would leave the module unloadable
           cp "$ODIR"/kernelsu.ko "$GITHUB_WORKSPACE/kernelsu-x86_64-${{ inputs.kmi }}.ko"
 
       - name: Show module info
