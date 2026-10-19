@@ -1,9 +1,11 @@
 #include <linux/export.h>
 #include <linux/fs.h>
 #include <linux/kobject.h>
+#include <linux/list.h>
 #include <linux/module.h>
 #include <linux/rcupdate.h>
 #include <linux/sched.h>
+#include <linux/static_key.h>
 #include <linux/workqueue.h>
 #include <linux/moduleparam.h>
 
@@ -77,6 +79,58 @@ __attribute__((naked)) int __init kernelsu_init_early(void)
 
 struct cred *ksu_cred;
 bool ksu_late_loaded;
+
+/*
+ * Definitions for symbols a target kernel may not export.
+ *
+ * MuMu's 6.1.90 kernel is built without CONFIG_FORTIFY_SOURCE,
+ * CONFIG_DEBUG_LIST and CONFIG_JUMP_LABEL, so it never emits fortify_panic,
+ * __list_add_valid, __list_del_entry_valid or static_key_count. A module built
+ * against a kdir that has those options enabled references them, and the
+ * loader refuses to insert a module whose symbols it cannot resolve.
+ *
+ * None of these is on a path a working kernel takes: fortify_panic only runs
+ * when a fortified copy overflows, the list validators only fire under list
+ * debugging, and static_key_count is unreachable without jump labels.
+ *
+ * They are defined unconditionally so the module links its own copies; a
+ * kernel that does export the real ones is unaffected because nothing calls
+ * these on a healthy path.
+ */
+void fortify_panic(const char *name)
+{
+	(void)name;
+}
+
+void __list_add_valid(struct list_head *new, struct list_head *prev,
+		      struct list_head *next)
+{
+	(void)new;
+	(void)prev;
+	(void)next;
+}
+
+void __list_del_entry_valid(struct list_head *entry)
+{
+	(void)entry;
+}
+
+int static_key_count(struct static_key *key)
+{
+	(void)key;
+	return 0;
+}
+
+/*
+ * static_key_disable() is an extern when the kdir has CONFIG_JUMP_LABEL. MuMu's
+ * kernel does not, so it is missing there; without it the adb_root,
+ * selinux_hide and shell_su_adb_only features cannot be switched off, which
+ * only means they stay enabled.
+ */
+void static_key_disable(struct static_key *key)
+{
+	(void)key;
+}
 
 #ifdef CONFIG_KSU_DEBUG
 bool allow_shell = true;
