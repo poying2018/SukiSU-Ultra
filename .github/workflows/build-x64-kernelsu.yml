@@ -6,10 +6,10 @@
 #
 # modpost is patched so symbols the module resolves at runtime are kept.
 #
-# FORTIFY_SOURCE / DEBUG_LIST / JUMP_LABEL are disabled because MuMu's kernel
-# does not enable them, so fortify_panic, __list_add_valid,
-# __list_del_entry_valid and static_key_count are not emitted there and a
-# module built with them can never be loaded.
+# The fortify / list-debug / jump-label helpers stay at their gki_defconfig
+# values. Disabling them makes the x86 module loader reject this module's
+# relocations outright; the four symbols they add that the target kernel does
+# not export are supplied afterwards with objcopy.
 #
 # Debug info is stripped from the module: keeping it makes the x86 module
 # loader reject the module's relocations ("Skipping invalid relocation
@@ -70,13 +70,13 @@ jobs:
           sed -i 's/__version_ext_names\\") =\\n/__version_ext_names\\") = \\"\\"\\n/' "$MODPOST"
 
           make O="$KDIR" gki_defconfig
-          # Fortify and list debugging are off because MuMu's kernel does not
-          # enable them: fortify_panic, __list_add_valid and __list_del_entry_
-          # valid are not emitted there, so a module built with them can never
-          # be loaded. static_key_count is likewise absent without JUMP_LABEL.
+          # The fortify/list/jump-label helpers stay at their gki_defconfig
+          # values. Disabling them makes the x86 loader reject this module's
+          # relocations outright; the handful of symbols they add are supplied
+          # afterwards with objcopy.
           scripts/config --file "$KDIR/.config" \
-            -d LTO_CLANG -e LTO_NONE -d LTO_CLANG_THIN -d LTO_CLANG_FULL -d THINLTO \
-            -d FORTIFY_SOURCE -d DEBUG_LIST -d JUMP_LABEL -d BUG_ON_DATA_CORRUPTION
+            -d LTO_CLANG -e LTO_NONE -d LTO_CLANG_THIN -d LTO_CLANG_FULL -d THINLTO
+
           make O="$KDIR" olddefconfig
           make O="$KDIR" modules_prepare
           make O="$KDIR" security/selinux/built-in.a
