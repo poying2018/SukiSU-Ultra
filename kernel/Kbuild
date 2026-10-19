@@ -1,5 +1,4 @@
 kernelsu-objs := core/init.o
-kernelsu-objs += core/static_key_disable_stub.o
 
 kernelsu-objs += feature/kernel_umount.o
 kernelsu-objs += feature/module_blacklist.o
